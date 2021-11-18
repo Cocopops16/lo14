@@ -42,17 +42,28 @@ function accept-loop() {
 #                                                                            
 #         commande-CMD arg1 arg2 ... argn                                      
 #                                                                              
-# si elle existe; sinon elle envoie une réponse d'erreur.                     
+# si elle existe; sinon elle envoie une réponse d'erreur.
+
+browseMode=false                  
 
 function interaction() {
     local cmd args
     while true; do
 		read cmd args || exit -1
-		fun="commande-$cmd"
+		if $browseMode; then
+			fun="browse-$cmd"
+		else
+			fun="commande-$cmd"
+		fi
 		if [ "$(type -t $fun)" = "function" ]; then
 	    	$fun $args
+	    elif [ "$fun" = "browse-exit" ]; then
+	    	browseMode=false
 		else
 		   	commande-non-comprise $fun $args
+		fi
+		if $browseMode; then
+			echo "vsh:>"
 		fi
     done
 }
@@ -89,7 +100,12 @@ function commande-create() {
 }
 
 function commande-browse() {
-	echo "browse"
+	nomArchive=$1
+	if [ -n "$nomArchive" ]; then
+		browseMode=true
+	else
+		echo "navigation impossible, pas de nom fourni pour l'archive"
+	fi
 }
 
 function commande-extract() {
