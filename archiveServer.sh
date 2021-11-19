@@ -44,7 +44,8 @@ function accept-loop() {
 #                                                                              
 # si elle existe; sinon elle envoie une réponse d'erreur.
 
-browseMode=false                  
+browseMode=false
+currentDirectory='\'                 
 
 function interaction() {
     local cmd args
@@ -106,6 +107,10 @@ function commande-browse() {
 	else
 		echo "navigation impossible, pas de nom fourni pour l'archive"
 	fi
+}
+
+function browse-pwd() {
+	echo $currentDirectory
 }
 
 function commande-extract() {
