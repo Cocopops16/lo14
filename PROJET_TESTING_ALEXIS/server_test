@@ -1,0 +1,172 @@
+#!/bin/bash
+
+# Ce script implémente un serveur.
+# Le script doit être invoqué avec l'argument :                                                              
+# PORT   le port sur lequel le serveur attend ses clients 
+
+if [ $# -ne 1 ]; then
+    echo "usage: $(basename $0) PORT"
+    exit -1
+fi
+
+PORT="$1"
+
+# Déclaration du tube
+
+FIFO="/tmp/$USER-fifo-$$"
+
+# Il faut détruire le tube quand le serveur termine pour éviter de
+# polluer /tmp.  On utilise pour cela une instruction trap pour être sur de
+# nettoyer même si le serveur est interrompu par un signal.
+
+function nettoyage() { rm -f "$FIFO"; }
+trap nettoyage EXIT
+
+# on crée le tube nommé
+
+[ -e "FIFO" ] || mkfifo "$FIFO"
+
+
+function accept-loop() {
+    while true; do
+		interaction < "$FIFO" | netcat -l -p "$PORT" > "$FIFO"
+    done
+}
+
+# La fonction interaction lit les commandes du client sur entrée standard
+# et envoie les réponses sur sa sortie standard. 
+#
+# 	CMD arg1 arg2 ... argn                   
+#                     
+# alors elle invoque la fonction :
+#                                                                            
+#         commande-CMD arg1 arg2 ... argn                                      
+#                                                                              
+# si elle existe; sinon elle envoie une réponse d'erreur.
+
+browseMode=false
+currentDirectory='\'
+
+#Fonction interaction avec l'utilisateur
+function interaction() {
+    local cmd args
+    while true; do
+		read cmd args || exit -1
+		if $browseMode; then #Si browsemode est vrai (Si l'user a invoquer la fontion browsemode)
+			fun="browse-$cmd" #browse-commande tapée stockée
+		else
+			fun="commande-$cmd" #SI browsemode a pas été appellée alors le serveur attend autre commande
+		fi
+		if [ "$(type -t $fun)" = "function" ]; then
+	    	$fun $args
+	    elif [ "$fun" = "browse-exit" ]; then #Si je quitte browsemode, alors je retourne en saisi de commande classique
+	    	browseMode=false
+		else
+		   	commande-non-comprise $fun $args
+		fi
+		if $browseMode; then #SI jsuis en browse mode, j'affiche vsh
+			echo "vsh:>"
+		fi
+    done
+}
+
+# Les fonctions implémentant les différentes commandes du serveur
+
+function commande-list() {
+	ls=$(ls archives)
+	if [ -n "$ls" ]; then
+		echo "Les archives présentes sur le serveur sont :"
+		echo $ls
+	else
+		echo "Pas d'archives présente sur le serveur"
+	fi
+}
+
+function commande-create() {
+nomArchive=$1 #Argument saisie (Nom de l'archive)
+	if [ -n "$nomArchive" ]; then #SI l'argument saisie est pas vide
+		occurence=false #Flag a false
+		for i in $(ls archives); do #On a crée au préalable un dossier archive qui va contenir toutes les archives
+			if [ "$nomArchive" = "$i" ]; then #SI on veut crée un une archive avec le meme nom
+				occurence=true #OCcurence = true
+				break
+			fi
+		done
+		if $occurence; then #SI TRUE alors impossible de créer logique !
+			echo "création impossible, une archive porte déjà ce nom"
+		else
+			echo "3:5" >> archives/$nomArchive #Sinon, on met tout en haut du fichier 3:5 comme dans l'énoncé et on crée automatique le fichier avec >>
+			echo "Le fichier a été créé avec succès"
+		fi
+	else
+		echo "création impossible, pas de nom fourni pour l'archive"
+	fi
+}
+
+#Fonction invoquer browse
+function commande-browse() {
+	nomArchive=$1 #Argument
+	if [ -n "$nomArchive" ]; then #Si argument est une chaine non vide (Donc il existe)
+		browseMode=true #On entre dans le browse mode
+	else
+		echo "navigation impossible, pas de nom fourni pour l'archive" #Sinon on dit qu'on peut pas car aucun nom fourni (où le serveur peut aller ?)
+	fi
+}
+
+function browse-pwd() {
+	echo $currentDirectory
+}
+
+find=false
+#Fonction extraction
+function commande-extract() {
+	nomArchive=$1 #Argument (Le nom de l'archive que l'utilisateur souhaite extraire pour la mettre sur sa machine !)
+	for i in $(ls archives)
+	do
+        	if [ "$nomArchive" =  "$i" ]
+		then
+			find=true
+			echo "Vous devez initialiser la connexion en tapant la commande ..."
+			read input
+			if [ "$input" == "ncat -l | tar xzv" ]
+			then
+				tar czv -v $i | ncat --send-only localhost #Commande pour extraire l'archive
+			else
+				echo "Vous n'avez pas initialiser la connexion"
+			fi
+		fi
+        done
+	if [ find=false ]
+	then
+		echo "Aucun fichier qui répond à ce nom dans le serveur"
+	fi
+}
+
+
+function browse-touch() {
+	nomFichier=$1
+	if [ -n "$nomFichier" ]
+	then
+		for i in $(ls archives)
+		do
+			if [ "$nomFichier" == "$i" ]
+			then
+				echo "Fichier existe déjà !"
+				break
+			else
+				touch $nomFichier
+				fi
+		done
+	else
+		echo "Je ne peux pas créer le fichier car aucun nom a été entré"
+	fi
+}
+
+#Fonction pour dire que le serveur a pas comprit la commande
+function commande-non-comprise() {
+   echo "Le serveur ne peut pas interpréter cette commande : $1 $2"
+}
+
+# On accepte et traite les connexions
+
+accept-loop
