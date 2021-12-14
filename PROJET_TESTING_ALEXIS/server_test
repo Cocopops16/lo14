@@ -5,7 +5,7 @@
 # PORT   le port sur lequel le serveur attend ses clients 
 
 if [ $# -ne 1 ]; then
-    echo "usage: $(basename $0) PORT"
+    echo "Erreur, port manquant"
     exit -1
 fi
 
@@ -103,13 +103,22 @@ nomArchive=$1 #Argument saisie (Nom de l'archive)
 	fi
 }
 
+
 #Fonction invoquer browse
 function commande-browse() {
-	nomArchive=$1 #Argument
-	if [ -n "$nomArchive" ]; then #Si argument est une chaine non vide (Donc il existe)
-		browseMode=true #On entre dans le browse mode
+	eval nomArchive=$1 #Argument
+	if [ -n "$nomArchive" ]
+	then #Si argument est une chaine non vide (Donc il existe)
+		trouve=$(ls archives | grep -c $nomArchive)
+		if [ $trouve -eq 0 ]
+		then
+			echo "Navigation impossible, aucune archive de ce nom sur le serveur"
+		else
+			browseMode=true
+			eval path='archives/$nomArchive'
+		fi
 	else
-		echo "navigation impossible, pas de nom fourni pour l'archive" #Sinon on dit qu'on peut pas car aucun nom fourni (où le serveur peut aller ?)
+		echo "Navigation impossible, pas de nom fourni pour l'archive" #Sinon on dit qu'on peut pas car aucun nom fourni (où le serveur peut aller ?)
 	fi
 }
 
@@ -142,29 +151,41 @@ function commande-extract() {
 	fi
 }
 
-
+#Fonction pour insérer une ligne dans l'archive (Fichier vide) à l'endroit spécifié par l'utilisateur et dans l'archive donné par l'user
 function browse-touch() {
-	nomFichier=$1
-	if [ -n "$nomFichier" ]
+	cheminFichier=$1 #Chemin du fichier entré par l"utilisateur  ( Dans quel dossier je dois foutre le fichier vide ) (Me donne la ligne où inserer mon fichier vide dans le texte !)
+	if [ -z $cheminFichier ]
 	then
-		for i in $(ls archives)
-		do
-			if [ "$nomFichier" == "$i" ]
+		echo "Erreur, aucun argument"
+		return
+	elif [ -n $cheminFichier ] # l'argument est entré
+	then
+
+		nomFichier=$(echo $cheminFichier | rev | cut -d"\\" -f 1 | rev) # Je récupère la nom du fichier entré par l'user ( Dernier champ )
+		occurence=$(grep -c $nomFichier $path) #Chercher si le fichier existe dans le fichier texte ( Je cherche si le nom apparait dans une ligne )
+		if [[ $occurence -ne 0 ]]
+		then
+			echo "Le fichier existe déjà dans l'archive"
+		else
+			arbo=$(echo $cheminFichier | rev | cut -d "\\" -f2- | rev) #Je recupère l'arbo donné par l'user avec des commandes CUT
+			replace=$(echo $arbo | sed 's/\\/\\\\/g') #Echapper les '\' pour éviter les bugs avec Grep 
+			occurence2=$(grep -c $replace $path) #Je regarde s'il y a occurence de l'arbo dans le fichier texte
+			match=$(echo $replace | rev | cut -d"\\" -f1 | rev) #Prendre le dernier champ de l'arbo pour que sed puisse match une ligne ET une seule
+			if [[ $occurence2 -ne 0 ]] #Si occurence est different de 0, l'arbo existe (Chaine trouvée) donc je peux insérer mon fichier
 			then
-				echo "Fichier existe déjà !"
-				break
+				sed -i "/\($match\)$/a $nomFichier -rw-rw-r-- 0 0 0" "$path" #Insertion du fichier vide au bon endroit (En dessous de la ligne finissant par $match regex)
+				cat $path
+				echo "Fichier vide inséré dans l'archive avec succès !"
 			else
-				touch $nomFichier
-				fi
-		done
-	else
-		echo "Je ne peux pas créer le fichier car aucun nom a été entré"
+				echo "L'arborescence décrite n'existe pas dans l'archive" #Pas d'arbo existente donc erreur
+			fi
+		fi
 	fi
-}
+} #Fixer Luser qui rentre des \\
 
 #Fonction pour dire que le serveur a pas comprit la commande
 function commande-non-comprise() {
-   echo "Le serveur ne peut pas interpréter cette commande : $1 $2"
+   echo "Le serveur ne peut pas interpréter cette commande"
 }
 
 # On accepte et traite les connexions
