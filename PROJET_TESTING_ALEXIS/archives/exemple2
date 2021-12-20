@@ -7,6 +7,8 @@ toto1 -rwxr-xr-x 29 1 3
 toto2 -rw-r--r-- 249 4 10
 @
 directory Exemple\Test\A
+Seraphin -rw-rw-r-- 0 0 0
+Doudou -rw-rw-r-- 0 0 0
 A1 drwxr-xr-x 4096
 A2 drwxr-xr-x 4096
 A3 drwxr-xr-x 4096
@@ -20,6 +22,8 @@ directory Exemple\Test\A\A2
 directory Exemple\Test\A\A3
 @
 directory Exemple\Test\B
+Minot -rw-rw-r-- 0 0 0
+bebe -rw-rw-r-- 0 0 0
 bar -rw-r--r-- 202 17 6
 @
 #!\bin\bash
