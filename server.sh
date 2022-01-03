@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Ce script implémente un serveur.
-# Le script doit être invoqué avec l'argument :                                                              
-# PORT   le port sur lequel le serveur attend ses clients 
+# Le script doit être invoqué avec l'argument :
+# PORT   le port sur lequel le serveur attend ses clients
 
 if [ $# -ne 1 ]; then
     echo "Erreur, port manquant"
@@ -33,14 +33,14 @@ function accept-loop() {
 }
 
 # La fonction interaction lit les commandes du client sur entrée standard
-# et envoie les réponses sur sa sortie standard. 
+# et envoie les réponses sur sa sortie standard.
 #
-# 	CMD arg1 arg2 ... argn                   
-#                     
+# 	CMD arg1 arg2 ... argn
+#
 # alors elle invoque la fonction :
-#                                                                            
-#         commande-CMD arg1 arg2 ... argn                                      
-#                                                                              
+#
+#         commande-CMD arg1 arg2 ... argn
+#
 # si elle existe; sinon elle envoie une réponse d'erreur.
 
 browseMode=false
@@ -64,7 +64,7 @@ function interaction() {
 		   	commande-non-comprise $fun $args
 		fi
 		if $browseMode; then #SI jsuis en browse mode, j'affiche vsh
-			echo "vsh:>"
+			echo -n "vsh:>"
 		fi
     done
 }
@@ -81,25 +81,84 @@ function commande-list() {
 	fi
 }
 
+function addDir() {
+  dirArborescence=$(echo $1 | sed 's/\//\\/g')
+  newDirName=$2
+  nomArchive=$3
+  cheminFichier=tmp_receive/$4
+  echo $dirArborescence $newDirName $nomArchive $cheminFichier
+  echo "directory $dirArborescence\\$newDirName" >> archives/$nomArchive
+  ls -l $cheminFichier | awk 'NR>1{n=split($1,tab,""); if(tab[1]=="d")print $9" "$1" "$5;}' >> archives/$nomArchive
+  ls -l $cheminFichier | awk 'NR>1{n=split($1,tab,""); if(tab[1]=="-")print $9" "$1" "$5;}END{print "@"}' >> archives/$nomArchive
+}
+
 function commande-create() {
-nomArchive=$1 #Argument saisie (Nom de l'archive)
-	if [ -n "$nomArchive" ]; then #SI l'argument saisie est pas vide
-		occurence=false #Flag a false
-		for i in $(ls archives); do #On a crée au préalable un dossier archive qui va contenir toutes les archives
-			if [ "$nomArchive" = "$i" ]; then #SI on veut crée un une archive avec le meme nom
-				occurence=true #OCcurence = true
-				break
-			fi
-		done
-		if $occurence; then #SI TRUE alors impossible de créer logique !
-			echo "création impossible, une archive porte déjà ce nom"
-		else
-			echo "3:5" >> archives/$nomArchive #Sinon, on met tout en haut du fichier 3:5 comme dans l'énoncé et on crée automatique le fichier avec >>
-			echo "Le fichier a été créé avec succès"
-		fi
-	else
-		echo "création impossible, pas de nom fourni pour l'archive"
-	fi
+    nomArchive=$1 #Argument saisie (Nom de l'archive)
+  	if [ -n "$nomArchive" ]; then #SI l'argument saisie est pas vide
+  		occurence=false #Flag a false
+  		for i in $(ls archives); do #On a crée au préalable un dossier archive qui va contenir toutes les archives
+  			if [ "$nomArchive" = "$i" ]; then #SI on veut crée un une archive avec le meme nom
+  				occurence=true #Occurence = true
+  				break
+  			fi
+  		done
+
+  		if $occurence; then #SI TRUE alors impossible de créer logique !
+  			echo "création impossible, une archive porte déjà ce nom"
+  		else
+        mkdir tmp_receive
+        cd tmp_receive
+        nc -l -p 8081 > receive.tar.xz
+        tar Jxvf receive.tar.xz
+        rm receive.tar.xz
+        cd ..
+
+        if [ -z "$(ls tmp_receive)" ];
+        then
+          echo "erreur lors du transfert"
+          ##cd ..
+          #rmdir $$
+        else
+          echo "arborescence bien reçue"
+          echo "3:5" >> archives/$nomArchive #Sinon, on met tout en haut du fichier 3:5 comme dans l'énoncé et on crée automatique le fichier avec >>
+          ls -l tmp_receive | awk -v nomArchive=$nomArchive 'BEGIN{print "\ndirectory "nomArchive}NR>1{n=split($1,tab,""); if(tab[1]=="d")print $9" "$1" "$5;}' >> archives/$nomArchive
+          ls -l tmp_receive | awk 'NR>1{n=split($1,tab,""); if(tab[1]=="-")print $9" "$1" "$5;}END{print "@"}' >> archives/$nomArchive
+          export -f addDir
+          awk  -v nomArchive=$nomArchive '{if($1=="directory"){dirArborescence=$2; gsub(/\\/, "/", dirArborescence); split($2,tab1,/test\\/); gsub(/\\/, "/", tab1[2]); cheminFichier=tab1[2]; getline; while($1!="@"){n2=split($2,tab2,""); if(tab2[1]=="d"){cmd="addDir "dirArborescence" "$1" "nomArchive" "cheminFichier"/"$1";"; system(cmd);}; getline}}}' archives/$nomArchive
+
+          nbrLinesHeader=$(wc -l archives/test | cut -d' ' -f1)
+          sed -i "1s/3:5/3:$nbrLinesHeader/" archives/test
+
+          while read -r line; do
+            if [[ -z $(echo $line | grep '^@') ]]; then
+              if [[ -z $(echo $line | grep '^directory') ]]; then
+                type=$(echo $line | awk '{split($2,tab,""); print tab[1]}')
+                echo $line
+                echo $type
+                if [ ! -z $(echo $type | grep '^-') ]; then
+                  fileName=$(echo $line | awk '{print $1}')
+                  startLine=$(wc -l archives/$nomArchive | cut -d' ' -f1)
+                  ((startLine++))
+                  nbrLinesFile=$(wc -l $chemin/$fileName | cut -d' ' -f1)
+                  ((endLine=startLine+nbrLinesFile-1))
+                  sed -i "s/^$fileName.*$/& $startLine $endLine/g" archives/$nomArchive
+                  cat $chemin/$fileName >> archives/$nomArchive
+                fi
+              else
+                chemin=$(printf "%s\n" "$line" | awk '{split($2,tab,/test\\/); gsub(/\\/, "/", tab1[2]); print tab[2]}')
+                chemin=$(printf "%s\n" "$chemin" | sed 's/\\/\//g')
+                chemin=tmp_receive/$chemin
+                echo $chemin
+              fi
+            fi
+          done < archives/$nomArchive
+
+    			echo "Le fichier a été créé avec succès"
+        fi
+  		fi
+  	else
+  		echo "création impossible, pas de nom fourni pour l'archive"
+  	fi
 }
 
 
@@ -139,7 +198,7 @@ function commande-extract() {
              	then
 			echo "L'archive n'existe pas dans le serveur"
 			return
-        	else 
+        	else
 			chemin=archives/$nomArchive #Path de l'archive
 			debut=$(head -1 $chemin | cut -d":" -f1) #Début du header
 			header=$(head -1 $chemin | cut -d":" -f2) #Je recupère le nombre de lignes du header
@@ -198,6 +257,14 @@ function commande-extract() {
 			done < tmp_extract/archive_tmp #Je lis le contenu du fichier temporaire avec que le header
                fi
 	fi
+
+  cd tmp_extract
+  rm archive_tmp
+  tar Jcvf send.tar.xz *
+  cat send.tar.xz | nc -l -p 8081
+  cd ..
+  rm -rf tmp_extract/*
+
 	echo "Extraction terminée"
 } #Reste a  TAR + Transfert des fichiers via netcat au client
 
@@ -219,7 +286,7 @@ function browse-touch() {
 			return
 		else
 			arbo=$(echo $cheminFichier | rev | cut -d "\\" -f2- | rev) #Je recupère l'arbo donné par l'user avec des commandes CUT
-			replace=$(echo $arbo | sed 's/\\/\\\\/g') #Echapper les '\' pour éviter les bugs avec Grep 
+			replace=$(echo $arbo | sed 's/\\/\\\\/g') #Echapper les '\' pour éviter les bugs avec Grep
 			occurence2=$(grep -c $replace $path) #Je regarde s'il y a occurence de l'arbo dans le fichier texte
 			match=$(echo $replace | rev | cut -d"\\" -f1 | rev) #Prendre le dernier champ de l'arbo pour que sed puisse match une ligne ET une seule
 			if [[ $occurence2 -ne 0 ]] #Si occurence est different de 0, l'arbo existe (Chaine trouvée) donc je peux insérer mon fichier
@@ -335,11 +402,11 @@ function browse-cat() {
 				 echo "$afficher2"
 			fi
 		fi
-		
+
 	else
 		echo "Erreur, aucun argument ou trop d'arguments"
 		return
-	fi 
+	fi
 }
 #Fonction pour dire que le serveur a pas comprit la commande
 function commande-non-comprise() {
