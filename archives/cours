@@ -1,0 +1,23 @@
+3:
+
+directory LO14\
+tdComptes drwxr-xr-x 48
+test1 drwxr-xr-x 10
+receive.tar.xz -rw-r--r-- 1232 24 23
+vsh.sh -rwxr-xr-x 992 24 23
+@
+directory LO14\tdComptes
+listing -rw-r--r-- 70 24 23
+script-listing.sh -rwxr--r-- 1327 24 23
+@
+directory LO14\test1
+test2 drwxr-xr-x 10
+@
+directory LO14\test1\test2
+test3 drwxr-xr-x 10
+@
+directory LO14\test1\test2\test3
+test4 drwxr-xr-x 0
+@
+directory LO14\test1\test2\test3\test4
+@

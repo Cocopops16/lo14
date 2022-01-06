@@ -44,28 +44,44 @@ function accept-loop() {
 # si elle existe; sinon elle envoie une réponse d'erreur.
 
 browseMode=false
-currentDirectory='\'
+currentDir='0'
+browseArchive="0"
+browseRoot="0"
 
 #Fonction interaction avec l'utilisateur
 function interaction() {
     local cmd args
+    x=0
     while true; do
-		read cmd args || exit -1
-		if $browseMode; then #Si browsemode est vrai (Si l'user invoque la fonction browse)
-			fun="browse-$cmd"
-		else
-			fun="commande-$cmd"
-		fi
-		if [ "$(type -t $fun)" = "function" ]; then
-	    		$fun $args
-	        elif [ "$fun" = "browse-exit" ]; then #Si je quitte browsemode
-	    		browseMode=false
-		else
-		   	commande-non-comprise $fun $args
-		fi
-		if $browseMode; then
-			echo -n "vsh:>"
-		fi
+      if [[ $x -eq 0 ]]; then
+        cmd=$(nc -l -p 8082)
+        if [[ ! -z $cmd ]]; then
+          args=$(echo $cmd | cut -d" " -f2)
+          cmd=$(echo $cmd | cut -d" " -f1)
+        fi
+      else
+        read -r cmd args || exit -1
+      fi
+  		if $browseMode; then #Si browsemode est vrai (Si l'user invoque la fonction browse)
+  			fun="browse-$cmd"
+      elif [[ -z $cmd && $x -eq 0 ]]; then
+        fun="commande-browse"
+        echo "$x $fun"
+        echo "args recup : $args"
+  		else
+  			fun="commande-$cmd"
+  		fi
+  		if [ "$(type -t $fun)" = "function" ]; then
+  	    $fun $args
+  	  elif [ "$fun" = "browse-exit" ]; then #Si je quitte browsemode
+  	    browseMode=false
+  		else
+        commande-non-comprise $fun $args
+  		fi
+  		if $browseMode; then
+  			echo -n "vsh:>"
+  		fi
+      ((x++))
     done
 }
 
@@ -81,22 +97,28 @@ function commande-list() {
 	fi
 }
 
+function browse-mkdir() {
+  if [[ "$1" = "-p" ]]; then
+    directory=$2
+  fi
+}
+
 function addDir() {
   dirArborescence=$(echo $1 | sed 's/\//\\/g')
   newDirName=$2
   nomArchive=$3
   cheminFichier=tmp_receive/$4
-  echo $dirArborescence $newDirName $nomArchive $cheminFichier
   echo "directory $dirArborescence\\$newDirName" >> archives/$nomArchive
   ls -l $cheminFichier | awk 'NR>1{n=split($1,tab,""); if(tab[1]=="d")print $9" "$1" "$5;}' >> archives/$nomArchive
   ls -l $cheminFichier | awk 'NR>1{n=split($1,tab,""); if(tab[1]=="-")print $9" "$1" "$5;}END{print "@"}' >> archives/$nomArchive
 }
 
 function commande-create() {
+    echo "Mode create"
     nomArchive=$1 #Argument (Nom de l'archive)
   	if [ -n "$nomArchive" ]; then
   		occurence=false #Flag false
-  		for i in $(ls archives); do 
+  		for i in $(ls archives); do
   			if [ "$nomArchive" = "$i" ]; then
   				occurence=true
   				break
@@ -106,7 +128,7 @@ function commande-create() {
   		if $occurence; then
   			echo "création impossible, une archive porte déjà ce nom"
   		else
-        mkdir tmp_receive
+        echo "reception des fichiers"
         cd tmp_receive
         nc -l -p 8081 > receive.tar.xz
         tar Jxvf receive.tar.xz
@@ -116,25 +138,26 @@ function commande-create() {
         if [ -z "$(ls tmp_receive)" ];
         then
           echo "erreur lors du transfert"
-          ##cd ..
-          #rmdir $$
         else
           echo "arborescence bien reçue"
           echo "3:5" >> archives/$nomArchive #Sinon, on met tout en haut du fichier 3:5 comme dans l'énoncé et on crée automatiquement le fichier avec >>
-          ls -l tmp_receive | awk -v nomArchive=$nomArchive 'BEGIN{print "\ndirectory "nomArchive}NR>1{n=split($1,tab,""); if(tab[1]=="d")print $9" "$1" "$5;}' >> archives/$nomArchive
-          ls -l tmp_receive | awk 'NR>1{n=split($1,tab,""); if(tab[1]=="-")print $9" "$1" "$5;}END{print "@"}' >> archives/$nomArchive
+          dir=$(ls tmp_receive)
+          ls -l tmp_receive/$dir | awk -v dir=$dir 'BEGIN{print "\ndirectory "dir}NR>1{n=split($1,tab,""); if(tab[1]=="d")print $9" "$1" "$5;}' >> archives/$nomArchive
+          ls -l tmp_receive/$dir | awk 'NR>1{n=split($1,tab,""); if(tab[1]=="-")print $9" "$1" "$5;}END{print "@"}' >> archives/$nomArchive
           export -f addDir
-          awk  -v nomArchive=$nomArchive '{if($1=="directory"){dirArborescence=$2; gsub(/\\/, "/", dirArborescence); split($2,tab1,/test\\/); gsub(/\\/, "/", tab1[2]); cheminFichier=tab1[2]; getline; while($1!="@"){n2=split($2,tab2,""); if(tab2[1]=="d"){cmd="addDir "dirArborescence" "$1" "nomArchive" "cheminFichier"/"$1";"; system(cmd);}; getline}}}' archives/$nomArchive
+          awk  -v nomArchive=$nomArchive '{if($1=="directory"){dirArborescence=$2; gsub(/\\/, "/", dirArborescence); getline; while($1!="@"){n2=split($2,tab2,""); if(tab2[1]=="d"){cmd="addDir "dirArborescence" "$1" "nomArchive" "dirArborescence"/"$1";"; system(cmd);}; getline}}}' archives/$nomArchive
+
+          root=$(cat archives/$nomArchive | awk 'BEGIN{ligneCandidate=""; nbrChamps=""; m=0}NR>2{if($1=="directory"){line=$0; n=split($2,tab,"\\");getline; if($1!="@"){ligneCandidate=ligneCandidate" "line; nbrChamps=nbrChamps" "n; m=m+1}}}END{split(ligneCandidate,tab2," "); split(nbrChamps,tab3," "); min=100; indice=1; for(i=1; i<=m; i++){if(tab3[i]<min){min=tab3[i]; indice=i}}indice=indice*2; print tab2[indice]}')
+          sed -i "s/^directory $root$/&\\\/g" archives/$nomArchive
 
           nbrLinesHeader=$(wc -l archives/test | cut -d' ' -f1)
-          sed -i "1s/3:5/3:$nbrLinesHeader/" archives/test
+          sed -i "1s/3:5/3:$nbrLinesHeader/" archives/$nomArchive
 
+          echo "traitment des données de chaque fichier"
           while read -r line; do
             if [[ -z $(echo $line | grep '^@') ]]; then
               if [[ -z $(echo $line | grep '^directory') ]]; then
                 type=$(echo $line | awk '{split($2,tab,""); print tab[1]}')
-                echo $line
-                echo $type
                 if [ ! -z $(echo $type | grep '^-') ]; then
                   fileName=$(echo $line | awk '{print $1}')
                   startLine=$(wc -l archives/$nomArchive | cut -d' ' -f1)
@@ -148,7 +171,6 @@ function commande-create() {
                 chemin=$(printf "%s\n" "$line" | awk '{split($2,tab,/test\\/); gsub(/\\/, "/", tab1[2]); print tab[2]}')
                 chemin=$(printf "%s\n" "$chemin" | sed 's/\\/\//g')
                 chemin=tmp_receive/$chemin
-                echo $chemin
               fi
             fi
           done < archives/$nomArchive
@@ -156,6 +178,7 @@ function commande-create() {
     			echo "Le fichier a été créé avec succès"
         fi
   		fi
+      rm -r tmp_receive/*
   	else
   		echo "création impossible, pas de nom fourni pour l'archive"
   	fi
@@ -164,16 +187,17 @@ function commande-create() {
 
 #Fonction invoquer browse
 function commande-browse() {
-	eval nomArchive=$1 #Argument
-	if [ -n "$nomArchive" ]
+	browseArchive=$1 #Argument
+	if [ -n "$browseArchive" ]
 	then #Si argument est une chaine non vide (Donc il existe)
-		trouve=$(ls archives | grep -c $nomArchive)
+		trouve=$(ls archives | grep -c $browseArchive)
 		if [ $trouve -eq 0 ]
 		then
 			echo "Navigation impossible, aucune archive de ce nom sur le serveur"
 		else
 			browseMode=true
-			eval path=archives/$nomArchive
+      browseRoot=$(egrep '^directory.*\\$' archives/$browseArchive | cut -d" " -f2)
+      currentDir=$browseRoot
 		fi
 	else
 		echo "Navigation impossible, pas de nom fourni pour l'archive"
@@ -181,8 +205,99 @@ function commande-browse() {
 }
 
 function browse-pwd() {
-	echo $currentDirectory
+	if [[ "$currentDir" = "$browseRoot" ]]; then
+    printf "%s\n" '\'
+  else
+    root=$(printf "%s\n" "$browseRoot" | sed 's/\\/\\\\/g')
+    printf "%s\n" $dir | awk -v root=$root '{n=split(root,tab,"\\"); m=split($1,tab2,"\\"); for(i=n;i<=m;i++){final=final"\\"tab2[i]}print final;}'
+  fi
 }
+
+function browse-cd() {
+  dirDestination=$1
+  test=$(printf "%s\n" $dirDestination | cut -c1 | sed 's/\\/\\\\/g')
+  if [[ ! -z $test ]]; then
+    test=$(egrep "^directory.*$test$" archives/exemple | cut -d" " -f2)
+  else
+    test="0"
+  fi
+  if [[ "$dirDestination" = '\' ]]; then
+    currentDir=$browseRoot
+  elif [[ "$dirDestination" = ".." ]]; then
+    if [[ "$currentDir" != "$browseRoot" ]]; then
+      currentDir=$(printf "%s\n" "$currentDir" | sed 's/\(.*\)\\.*$/\1/')
+      test=$currentDir'\'
+      if [[ "$test" = "$browseRoot" ]]; then
+        currentDir=$test
+      fi
+    fi
+  elif [[  "$test" = "$browseRoot" ]]; then
+    dir=$(printf "%s\n" "$dirDestination" | sed 's/\\/\\\\/g')
+    dir=$(egrep "^directory.*$dir$" archives/$browseArchive | cut -d" " -f2)
+    if [[ -z $dir ]]; then
+      echo "pas de dossier $dirDestination connu"
+    else
+      currentDir=$dir
+    fi
+  else
+    if [[ "$currentDir" = "$browseRoot" ]]; then
+      dir=$currentDir$dirDestination
+    else
+      dir=$currentDir'\'$dirDestination
+    fi
+    dir=$(printf "%s\n" "$dir" | sed 's/\\/\\\\/g')
+    dir=$(egrep "^directory.*$dir$" archives/$browseArchive | cut -d" " -f2)
+    if [[ -z $dir ]]; then
+      echo "pas de dossier $dirDestination connu"
+    else
+      currentDir=$dir
+    fi
+  fi
+}
+
+function lsAll() {
+  test=$(printf "%s\n" $1 | cut -c1 | sed 's/\\/\\\\/g')
+  if [[ ! -z $test ]]; then
+    test=$(egrep "^directory.*$test$" archives/exemple | cut -d" " -f2)
+  else
+    test="0"
+  fi
+  if [[ -z $1 ]]; then
+    dir=$currentDir
+  elif [[ "$test" = "$browseRoot" ]]; then
+    dir=$browseRoot$(printf "%s\n" $1 | cut -c2-)
+  else
+    if [[ "$currentDir" = "$browseRoot" ]]; then
+      dir=$currentDir$1
+    else
+      dir=$currentDir'\'$1
+    fi
+  fi
+  dir=$(printf "%s\n" "$dir" | sed 's/\\/\\\\/g')
+  printf "%s\n" $dir
+}
+
+function browse-ls() {
+  case $1 in
+    -l )
+      dir=$(lsAll $2)
+      awk -v dir=$dir 'BEGIN{strDir="directory "dir}{if($0==strDir){getline; while($1!="@"){split($1,tab,"");if(tab[1]!="."){print $2" "$3" "$1} getline}}}' archives/$browseArchive
+      ;;
+    -a )
+      dir=$(lsAll $2)
+      awk -v dir=$dir 'BEGIN{strDir="directory "dir}{if($0==strDir){getline; while($1!="@"){ls=ls" "$1; split($2,tab2,"");if(tab2[1]=="d"){ls=ls"\\"}else if(tab2[1]=="-" && (tab2[4]=="x" || tab2[7]=="x" || tab2[10]=="x")){ls=ls"*"} getline} print ls}}' archives/$browseArchive
+      ;;
+    -la | -al )
+      dir=$(lsAll $2)
+      awk -v dir=$dir 'BEGIN{strDir="directory "dir}{if($0==strDir){getline; while($1!="@"){print $2" "$3" "$1; getline}}}' archives/$browseArchive
+      ;;
+    * )
+      dir=$(lsAll $1)
+      awk -v dir=$dir 'BEGIN{strDir="directory "dir}{if($0==strDir){getline; while($1!="@"){split($1,tab,"");if(tab[1]!="."){ls=ls" "$1} split($2,tab2,"");if(tab2[1]=="d"){ls=ls"\\"}else if(tab2[1]=="-" && (tab2[4]=="x" || tab2[7]=="x" || tab2[10]=="x")){ls=ls"*"} getline} print ls}}' archives/$browseArchive
+      ;;
+  esac
+}
+
 
 #Fonction extraction
 function commande-extract() {
@@ -222,7 +337,7 @@ function commande-extract() {
 				then
 					arbo_doss=$(echo $ligne | awk '{print $2}') # Si ça commence par directory, je prend le field 2 qui correspond à l'arbo
 					mkdir -p tmp_extract/$arbo_doss # Création avec mkdir l'arbo avec l'option -parents
-				elif [[ ! "$ligne" =~ "directory"* ]] # Sinon, si ce n'est pas un directory 
+				elif [[ ! "$ligne" =~ "directory"* ]] # Sinon, si ce n'est pas un directory
 				then
 					rights=$(echo $ligne | awk '{print $2}') # Récupération des droits
 					name=$(echo $ligne | awk '{print $1}') # Récupération des noms
@@ -254,7 +369,7 @@ function commande-extract() {
 
 					fi
 				fi
-			done < tmp_extract/archive_tmp #Lecture 
+			done < tmp_extract/archive_tmp #Lecture
                fi
 	fi
 
@@ -266,14 +381,14 @@ function commande-extract() {
   rm -rf tmp_extract/*
 
   echo "Extraction terminée"
-} 
+}
 
 function browse-touch() {
+  path="archives/"$browseArchive
 	cheminFichier=$1
-        if [ -z $cheminFichier ]
-	then
+  if [ -z $cheminFichier ]
+  then
 		echo "Erreur, argument manquant"
-		return
 	elif [ -n $cheminFichier ]
 	then
 		nomFichier=$(echo $cheminFichier | rev | cut -d"\\" -f 1 | rev) # Récupération du nom du fichier entré par l'user ( Dernier champ )
@@ -292,7 +407,7 @@ function browse-touch() {
 				sed -i "/\($match\)\\\\*$/a $nomFichier -rw-rw-r-- 0 0 0" "$path" #Insertion du fichier vide au bon endroit (En dessous de la ligne finissant par $match regex)
 				echo "Fichier vide inséré dans l'archive avec succès !"
 				header=$(head -1 $path | cut -d":" -f2)
-				let header2="$header"+1 
+				let header2="$header"+1
 				sed -i "1s/$header/$header2/" $path #Augmenter compteur header car insertion fichier
 			else
 				echo "L'arborescence décrite n'existe pas dans l'archive"
@@ -303,7 +418,7 @@ function browse-touch() {
 } #Fixer Luser qui rentre des \\
 
 function browse-cat() {
-
+  path="archives/"$browseArchive
 	if [ $# -eq 1 ]
 	then
 		header=$(head -1 $path | cut -d":" -f2) #Nombre de lignes du header
@@ -337,9 +452,9 @@ function browse-cat() {
 			then
 				echo "Arbo existe pas"
 				return
-			else 
+			else
 				 bodycommence=$(cat "$path" | grep "^"$nomfich"" | cut -d" " -f4)
-				 let bodycommence="$bodycommence"+1 
+				 let bodycommence="$bodycommence"+1
 				 bodyetendre=$(cat "$path" | grep "^"$nomfich"" | awk '{print $5}') #Recuperer pour la ligne le nombre de lignes du body
 				 let bodyetendre="$bodyetendre"+1
 				 afficher=$(echo "$contenu" | sed -n "$bodycommence,$bodyetendre p") # J'affiche le contenu du fichier
@@ -392,7 +507,7 @@ function browse-cat() {
 				 bodycommence=$(cat "$path" | grep "^"$nomfich"" | cut -d" " -f4)
 				 bodycommence2=$(cat "$path" | grep "^"$nomfich2"" | cut -d" " -f4)
 				 let bodycommence="$bodycommence"+1
-				 let bodycommence2="$bodycommence2"+1 
+				 let bodycommence2="$bodycommence2"+1
 				 bodyetendre=$(cat "$path" | grep "^"$nomfich"" | awk '{print $5}') #Recuperer pour la ligne le nombre de lignes du body
 				 bodyetendre2=$(cat "$path" | grep "^"$nomfich2"" | awk '{print $5}')
 				 let bodyetendre="$bodyetendre"+1
