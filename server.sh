@@ -97,9 +97,34 @@ function commande-list() {
 	fi
 }
 
+function mkdirAddDir() {
+  if [[ "$(printf "%s\n" $2 | cut -c1)" = '\' ]]; then
+    dirArborescence=$directory
+    dirParent=$(printf "%s\n" $dirParent | rev | cut -d"\\" -f2- | rev)
+    test=$dirParent'\'
+    if [[ "$test" = "$browseRoot" ]]; then
+      dirParent=$test
+    fi
+  elif [[ "$currentDir" = "$browseRoot" ]]; then
+    dirArborescence=$currentDir$directory
+    dirParent=$currentDir
+  else
+    dirArborescence=$currentDir'\'$directory
+    dirParent=$currentDir
+  fi
+  dirArborescence=$(echo $2 | sed 's/\\/\\\\/g')
+  echo $1" "$2
+  awk -v finArchive=$1 -v dirArborescence=$dirArborescence 'NR<=finArchive{print}NR==finArchive{print "directory "dirArborescence"\n@"}NR>finArchive{print}' archives/$browseArchive > archives/$browseArchive
+
+}
+
 function browse-mkdir() {
+  finHeader=$(awk 'NR==1{print}' archives/$browseArchive | cut -d':' -f2)
   if [[ "$1" = "-p" ]]; then
-    directory=$2
+    directories=$2
+  else
+    directory=$1
+    mkdirAddDir $finHeader $directory
   fi
 }
 
@@ -150,7 +175,7 @@ function commande-create() {
           root=$(cat archives/$nomArchive | awk 'BEGIN{ligneCandidate=""; nbrChamps=""; m=0}NR>2{if($1=="directory"){line=$0; n=split($2,tab,"\\");getline; if($1!="@"){ligneCandidate=ligneCandidate" "line; nbrChamps=nbrChamps" "n; m=m+1}}}END{split(ligneCandidate,tab2," "); split(nbrChamps,tab3," "); min=100; indice=1; for(i=1; i<=m; i++){if(tab3[i]<min){min=tab3[i]; indice=i}}indice=indice*2; print tab2[indice]}')
           sed -i "s/^directory $root$/&\\\/g" archives/$nomArchive
 
-          nbrLinesHeader=$(wc -l archives/test | cut -d' ' -f1)
+          nbrLinesHeader=$(wc -l archives/$nomArchive | cut -d' ' -f1)
           sed -i "1s/3:5/3:$nbrLinesHeader/" archives/$nomArchive
 
           echo "traitment des données de chaque fichier"
@@ -163,13 +188,13 @@ function commande-create() {
                   startLine=$(wc -l archives/$nomArchive | cut -d' ' -f1)
                   ((startLine++))
                   nbrLinesFile=$(wc -l $chemin/$fileName | cut -d' ' -f1)
-                  ((endLine=startLine+nbrLinesFile-1))
+                  ((endLine=nbrLinesFile-1))
                   sed -i "s/^$fileName.*$/& $startLine $endLine/g" archives/$nomArchive
                   cat $chemin/$fileName >> archives/$nomArchive
                 fi
               else
-                chemin=$(printf "%s\n" "$line" | awk '{split($2,tab,/test\\/); gsub(/\\/, "/", tab1[2]); print tab[2]}')
-                chemin=$(printf "%s\n" "$chemin" | sed 's/\\/\//g')
+                chemin=$(printf "%s\n" "$line" | awk '{gsub(/\\/, "/", $2); print $2}')
+                #chemin=$(printf "%s\n" "$chemin" | sed 's/\\/\//g')
                 chemin=tmp_receive/$chemin
               fi
             fi
@@ -209,7 +234,7 @@ function browse-pwd() {
     printf "%s\n" '\'
   else
     root=$(printf "%s\n" "$browseRoot" | sed 's/\\/\\\\/g')
-    printf "%s\n" $dir | awk -v root=$root '{n=split(root,tab,"\\"); m=split($1,tab2,"\\"); for(i=n;i<=m;i++){final=final"\\"tab2[i]}print final;}'
+    printf "%s\n" $currentDir | awk -v root=$root '{n=split(root,tab,"\\"); m=split($1,tab2,"\\"); for(i=n;i<=m;i++){final=final"\\"tab2[i]}print final;}'
   fi
 }
 

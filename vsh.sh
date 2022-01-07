@@ -16,16 +16,16 @@ function transfertFile() {
 }
 
 function receiveFile() {
-  nc -c $1 8081 > send.tar.xz
+  sleep 2
+  timeout 3s nc -c $1 8081 > send.tar.xz
 }
 
 commande=$(echo $1 | cut -c 2-)
 if [ $# -eq 4 ]; then
   if [[ $commande = "create" ]]; then
-    tar Jcvf receive.tar.xz * 1> /dev/null
-    sendCommand $2 $commande $4 & transfertFile $2 & nc $2 $3
+    sendCommand $2 $commande $4 & transfertFile $2 & timeout 6s nc $2 $3
   elif [[ $commande = "extract" ]]; then
-    sendCommand $2 $commande $4 & receiveFile $2 & nc $2 $3
+    sendCommand $2 $commande $4 & receiveFile $2 & timeout 6s nc $2 $3
     tar Jxvf send.tar.xz
     rm send.tar.xz
   elif [[ $commande = "browse" ]]; then
