@@ -176,6 +176,7 @@ function commande-create() {
           sed -i "s/^directory $root$/&\\\/g" archives/$nomArchive
 
           nbrLinesHeader=$(wc -l archives/$nomArchive | cut -d' ' -f1)
+          ((nbrLinesHeader++))
           sed -i "1s/3:5/3:$nbrLinesHeader/" archives/$nomArchive
 
           echo "traitment des données de chaque fichier"
