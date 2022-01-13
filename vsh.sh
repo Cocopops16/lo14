@@ -31,7 +31,7 @@ if [ $# -eq 4 ]; then
   elif [[ $commande = "browse" ]]; then
     sendCommand $2 $commande $4 & nc $2 $3
   else
-    sendCommand $2 $commande $4 | nc $2 $3
+    sendCommand $2 $commande $4 & nc $2 $3
   fi
 elif [ $# -eq 3 ]; then
   sendCommand $2 $commande & timeout 0.5s nc $2 $3
